@@ -7,12 +7,12 @@
     flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
     let
       overlays = [ haskellNix.overlay
-        (final: prev: {
+        (final: _prev: {
           # This overlay adds our project to pkgs
           helloProject =
             final.haskell-nix.project' {
               src = ./.;
-              compiler-nix-name = "ghc927";
+              compiler-nix-name = "ghc92";
               # This is used by `nix develop .` to open a shell for use with
               # `cabal`, `hlint` and `haskell-language-server`
               shell.tools = {

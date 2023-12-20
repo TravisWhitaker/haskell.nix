@@ -74,7 +74,7 @@ let
   #   --shar256: 003lm3pm0000hbfmii7xcdd9v20000flxf7gdl2pyxia7p014i8z
   # will be trated like a field and returned here
   # (used in call-cabal-project-to-nix.nix to create a fixed-output derivation)
-  extractSourceRepoPackageData = cabalProjectFileName: sha256map: repo:
+  extractSourceRepoPackageData = _cabalProjectFileName: sha256map: repo:
     let
       refOrRev =
         if builtins.match "[0-9a-f]{40}" repo.tag != null
@@ -84,8 +84,8 @@ let
     url = repo.location;
     "${refOrRev}" = repo.tag;
     sha256 = repo."--sha256" or (
-      if sha256map != null
-        then sha256map."${repo.location}"."${repo.tag}"
+      if sha256map != null && sha256map ? ${repo.location}
+        then sha256map.${repo.location}.${repo.tag}
         else null);
     subdirs = if repo ? subdir
       then pkgs.lib.filter (x: x != "") (pkgs.lib.splitString " " repo.subdir)
@@ -128,7 +128,7 @@ let
   # This works because `cabal configure` does not include any of the `/nix/sore/`
   # paths in the `plan.json` (so materialized plan-nix will still work as expeced).
   # See tests/unit.nix for examples of input and output.
-  parseRepositoryBlock = evalPackages: cabalProjectFileName: sha256map: inputMap: cabal-install: nix-tools: block:
+  parseRepositoryBlock = evalPackages: _cabalProjectFileName: sha256map: inputMap: cabal-install: nix-tools: block:
     let
       lines = pkgs.lib.splitString "\n" block;
       # The first line will contain the repository name.
@@ -136,7 +136,7 @@ let
       attrs = parseBlockLines x.fst;
       sha256 = attrs."--sha256" or (
         if sha256map != null
-          then sha256map."${attrs.url}"
+          then sha256map.${attrs.url} or null
           else null);
     in rec {
       # This is `some-name` from the `repository some-name` line in the `cabal.project` file.

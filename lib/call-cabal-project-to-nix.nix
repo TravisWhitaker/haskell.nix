@@ -1,14 +1,4 @@
-{ pkgs, runCommand, cacert, index-state-hashes, haskellLib }@defaults:
-let readIfExists = src: fileName:
-      # Using origSrcSubDir bypasses any cleanSourceWith.
-      # `lookForCabalProject` allows us to avoid looking in source from hackage
-      # for cabal.project files.  It is set in `modules/hackage-project.nix`.
-      let origSrcDir = src.origSrcSubDir or src;
-      in
-        if (src.lookForCabalProject or true) && builtins.elem ((__readDir origSrcDir)."${fileName}" or "") ["regular" "symlink"]
-          then __readFile (origSrcDir + "/${fileName}")
-          else null;
-in
+{ pkgs, runCommand, cacert, index-state-hashes, haskellLib }:
 { name          ? src.name or null # optional name for better error messages
 , src
 , materialized-dir ? ../materialized
@@ -19,9 +9,9 @@ in
 , materialized  ? null # Location of a materialized copy of the nix files
 , checkMaterialization ? null # If true the nix files will be generated used to check plan-sha256 and material
 , cabalProjectFileName ? "cabal.project"
-, cabalProject         ? readIfExists src cabalProjectFileName
-, cabalProjectLocal    ? readIfExists src "${cabalProjectFileName}.local"
-, cabalProjectFreeze   ? readIfExists src "${cabalProjectFileName}.freeze"
+, cabalProject         ? null
+, cabalProjectLocal    ? null
+, cabalProjectFreeze   ? null
 , caller               ? "callCabalProjectToNix" # Name of the calling function for better warning messages
 , compilerSelection    ? p: p.haskell-nix.compiler
 , ghc           ? null # Deprecated in favour of `compiler-nix-name`
@@ -71,21 +61,20 @@ in
                             # package.
 , evalPackages
 , supportHpack ? false      # Run hpack on package.yaml files with no .cabal file
+, ignorePackageYaml ? false # Ignore package.yaml files even if they exist
 , ...
 }@args:
 let
   inherit (evalPackages.haskell-nix) materialize dotCabal;
 
-  # These defaults are hear rather than in modules/cabal-project.nix to make them
+  # These defaults are here rather than in modules/cabal-project.nix to make them
   # lazy enough to avoid infinite recursion issues.
   # Using null as the default also improves performance as they are not forced by the
   # nix module system for `nix-tools-unchecked` and `cabal-install-unchecked`.
   nix-tools = if args.nix-tools or null != null
     then args.nix-tools
-    else evalPackages.haskell-nix.nix-tools-unchecked.${compiler-nix-name};
-  cabal-install = if args.cabal-install or null != null
-    then args.cabal-install
-    else evalPackages.haskell-nix.cabal-install-unchecked.${compiler-nix-name};
+    else evalPackages.haskell-nix.nix-tools-unchecked;
+  cabal-install = nix-tools.exes.cabal;
   forName = pkgs.lib.optionalString (name != null) (" for " + name);
   nameAndSuffix = suffix: if name == null then suffix else name + "-" + suffix;
 
@@ -157,8 +146,6 @@ in let
     if index-state != null
     then index-state
     else pkgs.lib.last (builtins.attrNames index-state-hashes);
-
-  pkgconfPkgs = import ./pkgconf-nixpkgs-map.nix pkgs;
 
   # If a hash was not specified find a suitable cached index state to
   # use that will contain all the packages we need.  By using the
@@ -380,11 +367,14 @@ let
   } // pkgs.lib.optionalAttrs (checkMaterialization != null) {
     inherit checkMaterialization;
   }) (evalPackages.runCommand (nameAndSuffix "plan-to-nix-pkgs") {
-    nativeBuildInputs = [
-      nix-tools.exes.make-install-plan
-      nix-tools.exes.plan-to-nix
-      dummy-ghc dummy-ghc-pkg cabal-install evalPackages.rsync evalPackages.gitMinimal evalPackages.allPkgConfigWrapper ]
-      ++ pkgs.lib.optional supportHpack nix-tools.exes.hpack;
+    nativeBuildInputs =
+      # The things needed from nix-tools
+      [ nix-tools.exes.make-install-plan
+        nix-tools.exes.plan-to-nix
+        nix-tools.exes.cabal
+      ]
+      ++ pkgs.lib.optional supportHpack nix-tools.exes.hpack
+      ++ [dummy-ghc dummy-ghc-pkg evalPackages.rsync evalPackages.gitMinimal evalPackages.allPkgConfigWrapper ];
     # Needed or stack-to-nix will die on unicode inputs
     LOCALE_ARCHIVE = pkgs.lib.optionalString (evalPackages.stdenv.buildPlatform.libc == "glibc") "${evalPackages.glibcLocales}/lib/locale/locale-archive";
     LANG = "en_US.UTF-8";
@@ -433,7 +423,7 @@ let
               hpack $hpackFile
             ''
             else ''
-              echo WARNING $hpackFile has no .cabal file and `supportHpack` was not set.
+              echo "WARNING $hpackFile has no .cabal file and \`supportHpack\` was not set."
             ''
           }
         fi
@@ -496,13 +486,16 @@ let
           --exclude '*' \
           $tmp/ $out/
 
+    # Make sure the subDir' exists even if it did not contain any cabal files
+    mkdir -p $out${subDir'}
+
     # make sure the path's in the plan.json are relative to $out instead of $tmp
     # this is necessary so that plan-to-nix relative path logic can work.
     substituteInPlace $tmp${subDir'}/dist-newstyle/cache/plan.json --replace "$tmp" "$out"
 
     # run `plan-to-nix` in $out.  This should produce files right there with the
     # proper relative paths.
-    (cd $out${subDir'} && plan-to-nix --full --plan-json $tmp${subDir'}/dist-newstyle/cache/plan.json -o .)
+    (cd $out${subDir'} && plan-to-nix --full ${if ignorePackageYaml then "--ignore-package-yaml" else ""} --plan-json $tmp${subDir'}/dist-newstyle/cache/plan.json -o .)
 
     # Replace the /nix/store paths to minimal git repos with indexes (that will work with materialization).
     ${fixedProject.replaceLocations}
