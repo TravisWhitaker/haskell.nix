@@ -19,7 +19,7 @@
 , nix-tools
 , evalPackages
 , ...
-}@args:
+}:
 let
     inherit (evalPackages) runCommand;
     inherit (evalPackages.haskell-nix) haskellLib;
@@ -35,7 +35,7 @@ let
     # Filter just the stack yaml file and any resolver yaml file it points to.
     maybeCleanedSource = haskellLib.cleanSourceWith {
       inherit src;
-      filter = path: type:
+      filter = path: _type:
         let
           origSrc = if src ? _isLibCleanSourceWith then src.origSrc else src;
           origSubDir = if src ? _isLibCleanSourceWithEx then src.origSubDir else "";
@@ -82,8 +82,10 @@ concatMap (dep:
         let
             is-private = private dep.url;
             sha256 =
-              if dep.sha256 != null then dep.sha256
-              else if sha256map != null then sha256map."${dep.url}"."${dep.rev}"
+              if dep.sha256 != null
+                then dep.sha256
+              else if sha256map != null && sha256map ? ${dep.url}
+                then sha256map.${dep.url}.${dep.rev}
               else null;
             branch = lookupBranch {
               location = dep.url;

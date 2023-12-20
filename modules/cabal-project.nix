@@ -2,9 +2,12 @@
 with lib;
 with types;
 let readIfExists = src: fileName:
+      # Using origSrcSubDir bypasses any cleanSourceWith.
+      # `lookForCabalProject` allows us to avoid looking in source from hackage
+      # for cabal.project files.  It is set in `modules/hackage-project.nix`.
       let origSrcDir = src.origSrcSubDir or src;
       in
-        if builtins.elem ((__readDir origSrcDir)."${fileName}" or "") ["regular" "symlink"]
+        if (src.lookForCabalProject or true) && builtins.elem ((__readDir origSrcDir)."${fileName}" or "") ["regular" "symlink"]
           then __readFile (origSrcDir + "/${fileName}")
           else null;
 in {
@@ -14,6 +17,17 @@ in {
     compiler-nix-name = mkOption {
       type = str;
       description = "The name of the ghc compiler to use eg. \"ghc884\"";
+      # Map short version names to the latest GHC version.
+      # TODO: perhaps combine this with the `latestVer` mapping in `overlays/boostrap.nix`.
+      apply = name:
+        let
+          fullName = pkgs.haskell-nix.resolve-compiler-name name;
+          ghc99FullName = pkgs.haskell-nix.resolve-compiler-name "ghc99";
+        in
+        # cabal-install from hackage (3.10.1.0) does not build with GHC HEAD
+        if fullName == ghc99FullName && config.name == "cabal-install" && (builtins.elem config.version ["3.10.1.0" "3.10.2.0" "3.10.2.1"])
+          then "ghc963"
+          else pkgs.haskell-nix.resolve-compiler-name name;
     };
     compilerSelection = mkOption {
       type = unspecified;
@@ -77,11 +91,6 @@ in {
       type = nullOr package;
       default = null;
       description = "nix-tools to use when converting the `plan.json` to nix";
-    };
-    cabal-install = mkOption {
-      type = nullOr package;
-      default = null;
-      description = "cabal-install to use when running `cabal configure`";
     };
     configureArgs = mkOption {
       type = nullOr (separatedString " ");
