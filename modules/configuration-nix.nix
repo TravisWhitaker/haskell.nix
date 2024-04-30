@@ -44,7 +44,7 @@ in {
     (fromUntil "3.2.0.0" "3.5" ../overlays/patches/Cabal/Cabal-3.0.0.0-no-final-checks.diff)
     (fromUntil "3.6.0.0" "3.11" ../overlays/patches/Cabal/Cabal-3.6.0.0-drop-pkg-db-check.diff)
     (fromUntil "3.6.0.0" "3.11" ../overlays/patches/Cabal/Cabal-3.6.0.0-no-final-checks.diff)
-    (fromUntil "3.10" "3.11" ../overlays/patches/Cabal/9220.patch)
+    (fromUntil "3.10" "3.10.3" ../overlays/patches/Cabal/9220.patch)
   ];
 
   # These two patches are:
@@ -168,6 +168,15 @@ in {
   packages.ghci.flags.ghci = true;
   packages.ghci.flags.internal-interpreter = true;
 
+  # These flags are set by hadrian.  This would be fine if:
+  # * Haskell.nix respected `pre-existing` packages in `plan.json` and used the hadrian built version.
+  # * If `plan.json` included the flag settings used by `pre-existing` packages.
+  # For now the work around is to set the flags that hadrian does (see hadrian/src/Settings/Packages.hs).
+  packages.unix.flags      = pkgs.lib.optionalAttrs (builtins.compareVersions config.compiler.version "9.9" > 0) { os-string = true; };
+  packages.directory.flags = pkgs.lib.optionalAttrs (builtins.compareVersions config.compiler.version "9.9" > 0) { os-string = true; };
+  packages.Win32.flags     = pkgs.lib.optionalAttrs (builtins.compareVersions config.compiler.version "9.9" > 0) { os-string = true; };
+  packages.hashable.flags  = pkgs.lib.optionalAttrs (builtins.compareVersions config.compiler.version "9.9" > 0) { os-string = true; };
+
   # See https://github.com/Bodigrim/bitvec/pull/61
   packages.bitvec.patches = [
     (fromUntil "1.1.3.0" "1.1.3.0.1" ../patches/bitvec-gmp-fix.patch)
@@ -183,7 +192,9 @@ in {
   # https://gitlab.haskell.org/ghc/ghc/-/issues/23392
   # Using -j1 works around the issue.
   packages.gi-gtk.components.library.ghcOptions =
-    pkgs.lib.optional (__elem config.compiler.nix-name ["ghc961" "ghc962" "ghc963"]) "-j1";
+    pkgs.lib.optional (
+         builtins.compareVersions config.compiler.version "9.6.1" >= 0
+      && builtins.compareVersions config.compiler.version "9.9" < 0) "-j1";
 
   # With recent versions of nixpkgs fortify causes musl version of the
   # text package to fail with:

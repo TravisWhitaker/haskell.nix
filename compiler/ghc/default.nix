@@ -64,11 +64,11 @@ let self =
   # necessary fix for iOS: https://www.reddit.com/r/haskell/comments/4ttdz1/building_an_osxi386_to_iosarm64_cross_compiler/d5qvd67/
   disableLargeAddressSpace ? stdenv.targetPlatform.isDarwin && stdenv.targetPlatform.isAarch64
 
-, useLdGold ? 
+, useLdGold ?
     # might be better check to see if cc is clang/llvm?
     # use gold as the linker on linux to improve link times
     # do not use it on musl due to a ld.gold bug. See: <https://sourceware.org/bugzilla/show_bug.cgi?id=22266>.
-    (stdenv.targetPlatform.isLinux && !stdenv.targetPlatform.isAndroid && !stdenv.targetPlatform.isMusl) 
+    (stdenv.targetPlatform.isLinux && !stdenv.targetPlatform.isAndroid && !stdenv.targetPlatform.isMusl)
 
 , ghc-version ? src-spec.version
 , ghc-version-date ? null
@@ -141,10 +141,9 @@ let
     CrossCompilePrefix = ${targetPrefix}
   '' + lib.optionalString isCrossTarget ''
     Stage1Only = ${if targetPlatform.system == hostPlatform.system then "NO" else "YES"}
-  ''
-    # GHC 9.0.1 fails to compile for musl unless HADDOC_DOCS = NO
-    + lib.optionalString (isCrossTarget || (targetPlatform.isMusl && builtins.compareVersions ghc-version "9.0.1" >= 0)) ''
+  '' + lib.optionalString (isCrossTarget || targetPlatform.isMusl) ''
     HADDOCK_DOCS = NO
+  '' + ''
     BUILD_SPHINX_HTML = NO
     BUILD_SPHINX_PDF = NO
   '' + lib.optionalString enableRelocatedStaticLibs ''
@@ -247,8 +246,6 @@ let
           then "ghc928"
           else "ghc962";
     in
-      assert (buildPackages.haskell.compiler ? ${compiler-nix-name}
-        || throw "Expected pkgs.haskell.compiler.${compiler-nix-name} for building hadrian");
     buildPackages.pinned-haskell-nix.tool compiler-nix-name "hadrian" {
       compilerSelection = p: p.haskell.compiler;
       index-state = buildPackages.haskell-nix.internalHackageIndexState;
@@ -311,7 +308,13 @@ let
       # For cross compilers only the RTS should be built with -mno-outline-atomics
       + lib.optionalString (!hostPlatform.isAarch64 && targetPlatform.isLinux && targetPlatform.isAarch64)
         " '*.rts.ghc.c.opts += -optc-mno-outline-atomics'"
-      # The following is required if we build on aarch64-darwin for aarch64-iOS. Otherwise older 
+      # PIC breaks GHC annotations on windows (see test/annotations for a test case)
+      + lib.optionalString (enableRelocatedStaticLibs && !targetPlatform.isWindows)
+        " '*.*.ghc.*.opts += -fPIC' '*.*.cc.*.opts += -fPIC'"
+      # `-fexternal-dynamic-refs` causes `undefined reference` errors when building GHC cross compiler for windows
+      + lib.optionalString (enableRelocatedStaticLibs && targetPlatform.isx86_64 && !targetPlatform.isWindows)
+        " '*.*.ghc.*.opts += -fexternal-dynamic-refs'"
+      # The following is required if we build on aarch64-darwin for aarch64-iOS. Otherwise older
       # iPhones/iPads/... won't understand the compiled code, as the compiler will emit LDSETALH
       # + lib.optionalString (targetPlatform.???) "'*.rts.ghc.c.opts += -optc-mcpu=apple-a7 -optc-march=armv8-a+norcpc'"
       # For GHC versions in the 9.x range that don't support the +native_bignum flavour transformer yet
@@ -403,7 +406,7 @@ stdenv.mkDerivation (rec {
     '' + lib.optionalString (stdenv.targetPlatform.linker == "cctools") ''
         export OTOOL="${targetCC.bintools.bintools}/bin/${targetCC.bintools.targetPrefix}otool"
         export INSTALL_NAME_TOOL="${bintoolsFor.install_name_tool}/bin/${bintoolsFor.install_name_tool.targetPrefix}install_name_tool"
-    '') + lib.optionalString (targetPlatform == hostPlatform && useLdGold) 
+    '') + lib.optionalString (targetPlatform == hostPlatform && useLdGold)
     # set LD explicitly if we want gold even if we aren't cross compiling
     ''
         export LD="${targetCC.bintools}/bin/ld.gold"
@@ -542,6 +545,10 @@ stdenv.mkDerivation (rec {
               mkdir -p $generated/compiler/stage2/build/GHC/Settings
               cp _build/stage1/compiler/build/GHC/Settings/Config.hs $generated/compiler/stage2/build/GHC/Settings
             fi
+            if [[ -f compiler/GHC/CmmToLlvm/Version/Bounds.hs ]]; then
+              mkdir -p $generated/compiler/GHC/CmmToLlvm/Version
+              cp compiler/GHC/CmmToLlvm/Version/Bounds.hs $generated/compiler/GHC/CmmToLlvm/Version/Bounds.hs
+            fi
             cp _build/stage1/compiler/build/*.hs-incl $generated/compiler/stage2/build || true
           ''
           # Save generated files for needed when building ghc-boot
@@ -626,6 +633,17 @@ stdenv.mkDerivation (rec {
     # We could add `configured-src` as an output of the ghc derivation, but
     # having it as its own derivation means it can be accessed quickly without
     # building GHC.
+    raw-src = stdenv.mkDerivation {
+      name = name + "-raw-src";
+      inherit
+        version
+        patches
+        src;
+      installPhase = ''
+        cp -r . $out
+      '';
+      phases = [ "unpackPhase" "patchPhase" "installPhase"];
+    };
     configured-src = stdenv.mkDerivation ({
       name = name + "-configured-src";
       inherit
@@ -767,10 +785,8 @@ stdenv.mkDerivation (rec {
     ${hadrian}/bin/hadrian ${hadrianArgs} stage1:lib:terminfo
   '' + lib.optionalString (installStage1 && !haskell-nix.haskellLib.isCrossTarget) ''
     ${hadrian}/bin/hadrian ${hadrianArgs} stage2:exe:iserv
-    # I don't seem to be able to build _build/stage1/lib/bin/ghc-iserv-prof
-    # by asking hadrian for this. The issue is likely that the profiling way
-    # is probably missing from hadrian m(
-    ${hadrian}/bin/hadrian ${hadrianArgs} _build/stage1/lib/bin/ghc-iserv-prof
+    ${hadrian}/bin/hadrian ${hadrianArgs} _build/stage1/${
+        lib.optionalString (builtins.compareVersions ghc-version "9.9" < 0) "lib/"}bin/ghc-iserv-prof
     pushd _build/stage1/bin
     for exe in *; do
       mv $exe ${targetPrefix}$exe
@@ -779,14 +795,25 @@ stdenv.mkDerivation (rec {
   '';
 
   # Hadrian's installation only works for native compilers, and is broken for cross compilers.
-  # However Hadrian produces mostly relocatable installs anyway, so we can simply copy 
+  # However Hadrian produces mostly relocatable installs anyway, so we can simply copy
   # stage1/{bin, lib, share} into the destination as the copy phase.
-  
+
   installPhase =
     if installStage1
       then ''
         mkdir $out
         cp -r _build/stage1/bin $out
+        # let's assume that if we find a non-prefixed genprimop,
+        # we also find a non-prefixed deriveConstants
+        if [ -f _build/stageBoot/bin/genprimopcode ]; then
+          cp _build/stageBoot/bin/genprimopcode $out/bin
+          cp _build/stageBoot/bin/deriveConstants $out/bin
+        else
+          cp _build/stageBoot/bin/${targetPrefix}genprimopcode $out/bin
+          ln -s $out/bin/${targetPrefix}genprimopcode $out/bin/genprimopcode
+          cp _build/stageBoot/bin/${targetPrefix}deriveConstants $out/bin
+          ln -s $out/bin/${targetPrefix}deriveConstants $out/bin/deriveConstants
+        fi
         cp -r _build/stage1/lib $out
         mkdir $doc
         cp -r _build/stage1/share $doc

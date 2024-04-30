@@ -238,11 +238,11 @@ final: prev: {
           })
         ];
 
-        dotCabal = { index-state, sha256, cabal-install, extra-hackage-tarballs ? {}, extra-hackage-repos ? {}, nix-tools, ... }:
+        dotCabal = { index-state, sha256, extra-hackage-tarballs ? {}, extra-hackage-repos ? {}, nix-tools, ... }:
             let
               # NOTE: root-keys: aaa is because key-threshold: 0 does not seem to be enough by itself
               bootstrapIndexTarball = name: index: final.runCommand "cabal-bootstrap-index-tarball-${name}" {
-                nativeBuildInputs = [ cabal-install ] ++ cabal-issue-8352-workaround;
+                nativeBuildInputs = [ nix-tools.exes.cabal ] ++ cabal-issue-8352-workaround;
               } ''
                 HOME=$(mktemp -d)
                 mkdir -p $HOME/.cabal/packages/${name}
@@ -412,7 +412,7 @@ final: prev: {
               # -----------------------+---------------+------------+
               #
               final.runCommand "dot-cabal" {
-                nativeBuildInputs = [ cabal-install final.xorg.lndir ] ++ cabal-issue-8352-workaround;
+                nativeBuildInputs = [ nix-tools.exes.cabal final.xorg.lndir ] ++ cabal-issue-8352-workaround;
               } ''
                 # prepopulate hackage
                 mkdir -p $out/packages/hackage.haskell.org
@@ -1047,18 +1047,9 @@ final: prev: {
               exes = pkgs: (pkgs.haskell-nix.cabalProject' ({pkgs, ...}: {
                 name = "iserv-proxy";
                 inherit compiler-nix-name;
-                src =
-                  # Instead of using `sources.iserv-proxy` pull the pin from
-                  # the flake.lock file and use `pkgs.fetchgit`.
-                  # Unlike `sources.iserv-proxy`, this works even when using:
-                  #   --option restrict-eval true
-                  let
-                    pins = (__fromJSON (__readFile ../flake.lock)).nodes;
-                    iservProxyPin = pins.iserv-proxy.locked;
-                  in pkgs.fetchgit {
-                    inherit (iservProxyPin) url rev;
-                    sha256 = iservProxyPin.narHash;
-                  };
+
+                src = sources.iserv-proxy;
+
                 index-state = final.haskell-nix.internalHackageIndexState;
                 modules = [{
                   config = {
@@ -1128,12 +1119,7 @@ final: prev: {
               ghc-extra-projects-nix = final.ghc-extra-projects.${compiler-nix-name}.plan-nix;
           }) // final.lib.optionalAttrs (ifdLevel > 1) {
             # Things that require two levels of IFD to build (inputs should be in level 1)
-            nix-tools = final.buildPackages.haskell-nix.nix-tools;
-            nix-tools-unchecked = final.buildPackages.haskell-nix.nix-tools-unchecked;
-            # This is the setup using the prefered Cabal library.
-            default-setup = final.buildPackages.haskell-nix.compiler.${compiler-nix-name}.defaultSetupFor "some-package";
-            # This is the one used when that one is not allowed.
-            setup-cabal-from-ghc = final.buildPackages.haskell-nix.compiler.${compiler-nix-name}.defaultSetup.useCabalFromGHC;
+            nix-tools-unchecked = final.pkgsBuildBuild.haskell-nix.nix-tools-unchecked;
           } // final.lib.optionalAttrs (ifdLevel > 1
             && final.haskell-nix.haskellLib.isCrossHost
             # GHCJS builds its own template haskell runner.
