@@ -42,7 +42,7 @@ let
   combineAndMaterialize = unchecked: materialized-dir: ghcName: bootPackages:
       (final.haskell-nix.materialize ({
           materialized =
-            if __compareVersions final.buildPackages.haskell-nix.compiler.${ghcName}.version "9.8" < 0
+            if __compareVersions final.buildPackages.haskell-nix.compiler.${ghcName}.version "9.9" < 0
               then materialized-dir + "/ghc-boot-packages-nix/${ghcName +
                 # The 3434.patch we apply to fix linking on arm systems changes ghc-prim.cabal
                 # so it needs its own materialization.
@@ -73,12 +73,7 @@ let
       iserv        = "utils/iserv";
     } // final.lib.optionalAttrs ((!final.stdenv.hostPlatform.isGhcjs || builtins.compareVersions ghcVersion "9.6" < 0) && builtins.compareVersions ghcVersion "9.8" < 0) {
       libiserv     = "libraries/libiserv";
-    } // final.lib.optionalAttrs (builtins.compareVersions ghcVersion "9.9" > 0) {
-      Cabal        = "libraries/Cabal/Cabal";
-      Cabal-syntax = "libraries/Cabal/Cabal-syntax";
-      cabal-install = "libraries/Cabal/cabal-install";
-      cabal-install-solver = "libraries/Cabal/cabal-install-solver";
-    } // final.lib.optionalAttrs (!final.stdenv.hostPlatform.isGhcjs) {
+    } // final.lib.optionalAttrs (!final.stdenv.hostPlatform.isGhcjs || builtins.compareVersions ghcVersion "9" > 0) {
       ghc          = "compiler";
       ghc-boot     = "libraries/ghc-boot";
     } // (
@@ -258,7 +253,7 @@ in rec {
       index-state = final.haskell-nix.internalHackageIndexState;
       # Where to look for materialization files
       materialized =
-        if __compareVersions final.buildPackages.haskell-nix.compiler.${ghcName}.version "9.8" < 0
+        if __compareVersions final.buildPackages.haskell-nix.compiler.${ghcName}.version "9.9" < 0
           then ../materialized/ghc-extra-projects + "/${ghc-extra-projects-type proj.ghc}/${ghcName}"
           else null;
       compiler-nix-name = ghcName;
