@@ -37,11 +37,23 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc.js"></script>
     </head>
     <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
     <div id="body-container">
         <!-- Work around some values being stored in localStorage wrapped in quotes -->
         <script>
@@ -82,10 +94,13 @@
                 sidebar = sidebar || 'visible';
             } else {
                 sidebar = 'hidden';
+                sidebar_toggle.checked = false;
             }
-            sidebar_toggle.checked = sidebar === 'visible';
-            html.classList.remove('sidebar-visible');
-            html.classList.add("sidebar-" + sidebar);
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
         </script>
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
@@ -119,7 +134,7 @@
                             <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
                             <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
                         </ul>
-                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
                             <i class="fa fa-search"></i>
                         </button>
                     </div>
@@ -136,7 +151,12 @@
 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -582,62 +602,58 @@ cabal build
 </code></pre>
 <h2 id="scaffolding"><a class="header" href="#scaffolding">Scaffolding</a></h2>
 <p>The following code could be capy-pasted and will work with <code>stack.yaml</code> and <code>cabal.project</code> based projects.</p>
-<p>Edit your <code>flake.nix</code> as:```nix
-{
-description = "A very basic flake";
-inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
-inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
-inputs.flake-utils.url = "github:numtide/flake-utils";
-outputs = { self, nixpkgs, flake-utils, haskellNix }:
-flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
-let
-overlays = [ haskellNix.overlay
-(final: _prev: {
-# This overlay adds our project to pkgs
-helloProject =
-final.haskell-nix.project' {
-src = ./.;
-compiler-nix-name = "ghc96";
-# This is used by <code>nix develop .</code> to open a shell for use with
-# <code>cabal</code>, <code>hlint</code> and <code>haskell-language-server</code>
-shell.tools = {
-cabal = {};
-# hlint = {};
-# haskell-language-server = {};
-};
-# Non-Haskell shell tools go here
-shell.buildInputs = with pkgs; [
-nixpkgs-fmt
-];
-# This adds <code>js-unknown-ghcjs-cabal</code> to the shell.
-# shell.crossPlatforms = p: [p.ghcjs];
-};
-})
-];
-pkgs = import nixpkgs { inherit system overlays; inherit (haskellNix) config; };
-flake = pkgs.helloProject.flake {
-# This adds support for <code>nix build .#js-unknown-ghcjs:hello:exe:hello</code>
-# crossPlatforms = p: [p.ghcjs];
-};
-in flake // {
-# Built by <code>nix build .</code>
-packages.default = flake.packages."hello:exe:hello";
-});
-}</p>
-<pre><code>
-&gt; **Note:** Git dependencies
-&gt; 
-&gt; If you have git dependencies in your project, you'll need to [calculate sha256 hashes for them](./source-repository-hashes.md).
-
-## Working with a project
-
-Top-level attributes are Haskell packages (incl. dependencies) part of your project.
-
-This section will show side by side the commands using Flakes experimental `new-command` API and legacy Nix commands.
-
-To build the library component of a package in the project run:
-```shell
-nix build .#your-package-name:lib:your-package-name
+<p>Edit your <code>flake.nix</code> as:</p>
+<pre><code class="language-nix">{
+  description = "A very basic flake";
+  inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
+  inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
+  inputs.flake-utils.url = "github:numtide/flake-utils";
+  outputs = { self, nixpkgs, flake-utils, haskellNix }:
+    flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
+    let
+      overlays = [ haskellNix.overlay
+        (final: _prev: {
+          # This overlay adds our project to pkgs
+          helloProject =
+            final.haskell-nix.project' {
+              src = ./.;
+              compiler-nix-name = "ghc96";
+              # This is used by `nix develop .` to open a shell for use with
+              # `cabal`, `hlint` and `haskell-language-server`
+              shell.tools = {
+                cabal = {};
+                # hlint = {};
+                # haskell-language-server = {};
+              };
+              # Non-Haskell shell tools go here
+              shell.buildInputs = with pkgs; [
+                nixpkgs-fmt
+              ];
+              # This adds `js-unknown-ghcjs-cabal` to the shell.
+              # shell.crossPlatforms = p: [p.ghcjs];
+            };
+        })
+      ];
+      pkgs = import nixpkgs { inherit system overlays; inherit (haskellNix) config; };
+      flake = pkgs.helloProject.flake {
+        # This adds support for `nix build .#js-unknown-ghcjs:hello:exe:hello`
+        # crossPlatforms = p: [p.ghcjs];
+      };
+    in flake // {
+      # Built by `nix build .`
+      packages.default = flake.packages."hello:exe:hello";
+    });
+}
+</code></pre>
+<blockquote>
+<p><strong>Note:</strong> Git dependencies</p>
+<p>If you have git dependencies in your project, you'll need to <a href="tutorials/./source-repository-hashes.html">calculate sha256 hashes for them</a>.</p>
+</blockquote>
+<h2 id="working-with-a-project"><a class="header" href="#working-with-a-project">Working with a project</a></h2>
+<p>Top-level attributes are Haskell packages (incl. dependencies) part of your project.</p>
+<p>This section will show side by side the commands using Flakes experimental <code>new-command</code> API and legacy Nix commands.</p>
+<p>To build the library component of a package in the project run:</p>
+<pre><code class="language-shell">nix build .#your-package-name:lib:your-package-name
 </code></pre>
 <p>There are also other components such as <code>exes</code>, <code>tests</code>, <code>benchmarks</code> and <code>all</code>.
 To build an executable:</p>
@@ -1780,8 +1796,8 @@ needed for <code>importAndFilterProject</code>.</p>
 <div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>name</code></td><td>String</td><td>Optional name for better error messages.</td></tr>
 <tr><td><code>src</code></td><td>Path</td><td>Location of the cabal project files.</td></tr>
-<tr><td><code>compiler-nix-name</code></td><td>String</td><td>The name of the ghc compiler to use eg. "ghc884"</td></tr>
-<tr><td><code>index-state</code></td><td>Timestamp</td><td>Optional hackage index-state, eg. "2019-10-10T00:00:00Z".</td></tr>
+<tr><td><code>compiler-nix-name</code></td><td>String</td><td>The name of the ghc compiler to use eg. "ghc9122"</td></tr>
+<tr><td><code>index-state</code></td><td>Timestamp</td><td>Optional hackage index-state, eg. "2025-01-10T00:00:00Z".</td></tr>
 <tr><td><code>index-sha256</code></td><td>Sha256</td><td>Optional hash of the truncated hackage index-state.</td></tr>
 <tr><td><code>plan-sha256</code></td><td>Sha256</td><td>Optional hash of the plan-to-nix output (makes the plan-to-nix step a fixed output derivation).</td></tr>
 <tr><td><code>cabalProject</code></td><td>String</td><td>Optional cabal project file contents (defaults to readFile "${src}/cabal.project").</td></tr>
@@ -1890,17 +1906,49 @@ packages with <code>ghci</code> or <code>cabal v2-build</code> (but not Stack).<
     { packages, withHoogle ? true, exactDeps ? false, ...}: ...
 </code></pre>
 <div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>name</code></td><td>String</td><td>Name of the derivation</td></tr>
 <tr><td><code>packages</code></td><td>Function</td><td>Package selection function. It takes a list of <a href="reference/library.html#haskell-package">Haskell packages</a> and returns a subset of these packages.</td></tr>
 <tr><td><code>components</code></td><td>Function</td><td>Similar to <code>packages</code>, by default all the components of the selected packages are selected.</td></tr>
 <tr><td><code>additional</code></td><td>Function</td><td>Similar to <code>packages</code>, but the selected packages are built and included in <code>ghc-pkg list</code> (not just their dependencies).</td></tr>
 <tr><td><code>withHoogle</code></td><td>Boolean</td><td>Whether to build a Hoogle documentation index and provide the <code>hoogle</code> command.</td></tr>
 <tr><td><code>exactDeps</code></td><td>Boolean</td><td>Prevents the Cabal solver from choosing any package dependency other than what are in the package set.</td></tr>
+<tr><td><code>allToolDeps</code></td><td>Boolean</td><td>Indicates if the shell should include all the tool dependencies of the haskell packages in the project.</td></tr>
 <tr><td><code>tools</code></td><td>Function</td><td>AttrSet of tools to make available e.g. <code>{ cabal = "3.2.0.0"; }</code> or <code>{ cabal = { version = "3.2.0.0"; }; }</code>. If an AttrSet is provided for a tool, the additional arguments will be passed to the function creating the derivation for that tool. So you can provide an <code>index-state</code> or a <code>materialized</code> argument like that <code>{ cabal = { version = "3.2.0.0"; index-state = "2020-10-30T00:00:00Z"; materialized = ./cabal.materialized; }; }</code> for example. You can specify and materialize the version of hoogle used to construct the hoogle index by including something like <code>{ hoogle = { version = "5.0.17.15"; index-state = "2020-05-31T00:00:00Z"; materialized = ./hoogle.materialized; }</code>. Uses a default version of hoogle if omitted.</td></tr>
-<tr><td><code>inputsFrom</code></td><td>List</td><td>List of other shells to include in this one.  The <code>buildInputs</code> and <code>nativeBuildInputs</code> of each will be included using <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>.</td></tr>
+<tr><td><code>packageSetupDeps</code></td><td>Boolean</td><td>Set this to <code>false</code> to exclude custom-setup dependencies.</td></tr>
+<tr><td><code>enableDWARF</code></td><td>Boolean</td><td>Include debug info</td></tr>
 <tr><td><code>crossPlatforms</code></td><td>Function</td><td>Platform selection function for cross compilation targets to support eg. <code>ps: with ps; [ghcjs mingwW64]</code> (see nixpkgs lib.systems.examples for list of platform names).</td></tr>
-<tr><td><code>{ ... }</code></td><td>Attrset</td><td>All the other arguments are passed to <a href="https://nixos.org/nixpkgs/manual/#sec-using-stdenv"><code>mkDerivation</code></a>.</td></tr>
+<tr><td><code>inputsFrom</code></td><td>List</td><td>List of other shells to include in this one.  The <code>buildInputs</code> and <code>nativeBuildInputs</code> of each will be included using <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>.</td></tr>
+<tr><td><code>shellHook</code></td><td>String</td><td>Bash statements that are executed when the shell starts.</td></tr>
+<tr><td><code>buildInputs</code></td><td></td><td>Passed to <a href="https://nixos.org/nixpkgs/manual/#sec-using-stdenv"><code>mkDerivation</code></a> (via <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>).</td></tr>
+<tr><td><code>nativeBuildInputs</code></td><td></td><td>Passed to <a href="https://nixos.org/nixpkgs/manual/#sec-using-stdenv"><code>mkDerivation</code></a> (via <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>).</td></tr>
+<tr><td><code>passthru</code></td><td></td><td>Passed to <a href="https://nixos.org/nixpkgs/manual/#sec-using-stdenv"><code>mkDerivation</code></a>  (via <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>).</td></tr>
 </tbody></table>
 </div>
+<p>The arguments are checked using the module <code>modules/shell.nix</code>.</p>
+<p>To set environment variables in the shell use:</p>
+<pre><code>  shellHook = ''
+    export FOO="bar"
+  '';
+</code></pre>
+<p>or</p>
+<pre><code>(p.shellFor {}).overrideAttrs {
+   FOO = "bar";
+}
+</code></pre>
+<p>The <code>shellFor</code> arguments can also be passed to the project <code>shell</code>
+argument.  For instance:</p>
+<pre><code>(pkgs.haskell-nix.project {
+  ...
+  shell.tools.cabal = {}
+).shellFor {}
+</code></pre>
+<p>Is the same as:</p>
+<pre><code>(pkgs.haskell-nix.project {
+  ...
+).shellFor {
+  tools.cabal = {}
+}
+</code></pre>
 <p><strong>Return value</strong>: a derivation</p>
 <blockquote>
 <p>⚠️ <strong>Warning:</strong></p>
@@ -4982,7 +5030,7 @@ the {option}<code>nixpkgs.pkgs</code> option.</li>
 <p><strong>No Example</strong></p>
 <h2 id="packagespackagesynopsis"><a class="header" href="#packagespackagesynopsis">packages.<name>.package.synopsis</a></h2>
 <p><strong>Type</strong>: string</p>
-<p><strong>No Default</strong></p>
+<p><strong>Default</strong>: {"_type":"literalExpression","text":""""}</p>
 <p><strong>No Example</strong></p>
 <h2 id="packagespackageurl"><a class="header" href="#packagespackageurl">packages.<name>.package.url</a></h2>
 <p><strong>Type</strong>: string</p>
@@ -5935,6 +5983,30 @@ hix-shell
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div><p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="jul-3-2025"><a class="header" href="#jul-3-2025">Jul 3, 2025</a></h2>
+<p>Some time ago the behavior of <code>shellFor</code> changed so that the arguments
+are now checked against <code>modules/shell.nix</code>.  This was done as part of a fix
+for bugs in the way <code>shellFor</code> arguments and project <code>shell</code> arguments
+interacted (both are now <code>modules</code> and the normal module merge rules apply).</p>
+<p>This means it is no longer possible to pass arbitrarily named arguments
+to <code>shellFor</code> in order to set environment variables.</p>
+<p>Instead of:</p>
+<pre><code>p.shellFor {
+  FOO = "bar";
+}
+</code></pre>
+<p>Use:</p>
+<pre><code>p.shellFor {
+  shellHook = ''
+    export FOO="bar"
+  '';
+}
+</code></pre>
+<p>or</p>
+<pre><code>(p.shellFor {}).overrideAttrs {
+   FOO = "bar";
+}
+</code></pre>
 <h2 id="jan-29-2025"><a class="header" href="#jan-29-2025">Jan 29, 2025</a></h2>
 <p>Removed GHC &lt;9.6 from CI.</p>
 <p>The latest <code>nixpkgs-unstable</code> caused problems with</p>
@@ -6356,6 +6428,7 @@ take a <code>pkg-def-extras</code> instead of <code>pkg-def-overlay</code> argum
             window.setTimeout(window.print, 100);
         });
         </script>
+
 
     </div>
     </body>

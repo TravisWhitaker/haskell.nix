@@ -36,11 +36,23 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc.js"></script>
     </head>
     <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
     <div id="body-container">
         <!-- Work around some values being stored in localStorage wrapped in quotes -->
         <script>
@@ -81,10 +93,13 @@
                 sidebar = sidebar || 'visible';
             } else {
                 sidebar = 'hidden';
+                sidebar_toggle.checked = false;
             }
-            sidebar_toggle.checked = sidebar === 'visible';
-            html.classList.remove('sidebar-visible');
-            html.classList.add("sidebar-" + sidebar);
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
         </script>
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
@@ -118,7 +133,7 @@
                             <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
                             <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
                         </ul>
-                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
                             <i class="fa fa-search"></i>
                         </button>
                     </div>
@@ -135,7 +150,12 @@
 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -355,8 +375,8 @@ needed for <code>importAndFilterProject</code>.</p>
 <div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>name</code></td><td>String</td><td>Optional name for better error messages.</td></tr>
 <tr><td><code>src</code></td><td>Path</td><td>Location of the cabal project files.</td></tr>
-<tr><td><code>compiler-nix-name</code></td><td>String</td><td>The name of the ghc compiler to use eg. "ghc884"</td></tr>
-<tr><td><code>index-state</code></td><td>Timestamp</td><td>Optional hackage index-state, eg. "2019-10-10T00:00:00Z".</td></tr>
+<tr><td><code>compiler-nix-name</code></td><td>String</td><td>The name of the ghc compiler to use eg. "ghc9122"</td></tr>
+<tr><td><code>index-state</code></td><td>Timestamp</td><td>Optional hackage index-state, eg. "2025-01-10T00:00:00Z".</td></tr>
 <tr><td><code>index-sha256</code></td><td>Sha256</td><td>Optional hash of the truncated hackage index-state.</td></tr>
 <tr><td><code>plan-sha256</code></td><td>Sha256</td><td>Optional hash of the plan-to-nix output (makes the plan-to-nix step a fixed output derivation).</td></tr>
 <tr><td><code>cabalProject</code></td><td>String</td><td>Optional cabal project file contents (defaults to readFile "${src}/cabal.project").</td></tr>
@@ -465,17 +485,49 @@ packages with <code>ghci</code> or <code>cabal v2-build</code> (but not Stack).<
     { packages, withHoogle ? true, exactDeps ? false, ...}: ...
 </code></pre>
 <div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>name</code></td><td>String</td><td>Name of the derivation</td></tr>
 <tr><td><code>packages</code></td><td>Function</td><td>Package selection function. It takes a list of <a href="#haskell-package">Haskell packages</a> and returns a subset of these packages.</td></tr>
 <tr><td><code>components</code></td><td>Function</td><td>Similar to <code>packages</code>, by default all the components of the selected packages are selected.</td></tr>
 <tr><td><code>additional</code></td><td>Function</td><td>Similar to <code>packages</code>, but the selected packages are built and included in <code>ghc-pkg list</code> (not just their dependencies).</td></tr>
 <tr><td><code>withHoogle</code></td><td>Boolean</td><td>Whether to build a Hoogle documentation index and provide the <code>hoogle</code> command.</td></tr>
 <tr><td><code>exactDeps</code></td><td>Boolean</td><td>Prevents the Cabal solver from choosing any package dependency other than what are in the package set.</td></tr>
+<tr><td><code>allToolDeps</code></td><td>Boolean</td><td>Indicates if the shell should include all the tool dependencies of the haskell packages in the project.</td></tr>
 <tr><td><code>tools</code></td><td>Function</td><td>AttrSet of tools to make available e.g. <code>{ cabal = "3.2.0.0"; }</code> or <code>{ cabal = { version = "3.2.0.0"; }; }</code>. If an AttrSet is provided for a tool, the additional arguments will be passed to the function creating the derivation for that tool. So you can provide an <code>index-state</code> or a <code>materialized</code> argument like that <code>{ cabal = { version = "3.2.0.0"; index-state = "2020-10-30T00:00:00Z"; materialized = ./cabal.materialized; }; }</code> for example. You can specify and materialize the version of hoogle used to construct the hoogle index by including something like <code>{ hoogle = { version = "5.0.17.15"; index-state = "2020-05-31T00:00:00Z"; materialized = ./hoogle.materialized; }</code>. Uses a default version of hoogle if omitted.</td></tr>
-<tr><td><code>inputsFrom</code></td><td>List</td><td>List of other shells to include in this one.  The <code>buildInputs</code> and <code>nativeBuildInputs</code> of each will be included using <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>.</td></tr>
+<tr><td><code>packageSetupDeps</code></td><td>Boolean</td><td>Set this to <code>false</code> to exclude custom-setup dependencies.</td></tr>
+<tr><td><code>enableDWARF</code></td><td>Boolean</td><td>Include debug info</td></tr>
 <tr><td><code>crossPlatforms</code></td><td>Function</td><td>Platform selection function for cross compilation targets to support eg. <code>ps: with ps; [ghcjs mingwW64]</code> (see nixpkgs lib.systems.examples for list of platform names).</td></tr>
-<tr><td><code>{ ... }</code></td><td>Attrset</td><td>All the other arguments are passed to <a href="https://nixos.org/nixpkgs/manual/#sec-using-stdenv"><code>mkDerivation</code></a>.</td></tr>
+<tr><td><code>inputsFrom</code></td><td>List</td><td>List of other shells to include in this one.  The <code>buildInputs</code> and <code>nativeBuildInputs</code> of each will be included using <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>.</td></tr>
+<tr><td><code>shellHook</code></td><td>String</td><td>Bash statements that are executed when the shell starts.</td></tr>
+<tr><td><code>buildInputs</code></td><td></td><td>Passed to <a href="https://nixos.org/nixpkgs/manual/#sec-using-stdenv"><code>mkDerivation</code></a> (via <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>).</td></tr>
+<tr><td><code>nativeBuildInputs</code></td><td></td><td>Passed to <a href="https://nixos.org/nixpkgs/manual/#sec-using-stdenv"><code>mkDerivation</code></a> (via <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>).</td></tr>
+<tr><td><code>passthru</code></td><td></td><td>Passed to <a href="https://nixos.org/nixpkgs/manual/#sec-using-stdenv"><code>mkDerivation</code></a>  (via <a href="https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell">mkShell</a>).</td></tr>
 </tbody></table>
 </div>
+<p>The arguments are checked using the module <code>modules/shell.nix</code>.</p>
+<p>To set environment variables in the shell use:</p>
+<pre><code>  shellHook = ''
+    export FOO="bar"
+  '';
+</code></pre>
+<p>or</p>
+<pre><code>(p.shellFor {}).overrideAttrs {
+   FOO = "bar";
+}
+</code></pre>
+<p>The <code>shellFor</code> arguments can also be passed to the project <code>shell</code>
+argument.  For instance:</p>
+<pre><code>(pkgs.haskell-nix.project {
+  ...
+  shell.tools.cabal = {}
+).shellFor {}
+</code></pre>
+<p>Is the same as:</p>
+<pre><code>(pkgs.haskell-nix.project {
+  ...
+).shellFor {
+  tools.cabal = {}
+}
+</code></pre>
 <p><strong>Return value</strong>: a derivation</p>
 <blockquote>
 <p>⚠️ <strong>Warning:</strong></p>
@@ -545,6 +597,7 @@ shell.</p>
         <script src="../book.js"></script>
 
         <!-- Custom JS scripts -->
+
 
 
     </div>
